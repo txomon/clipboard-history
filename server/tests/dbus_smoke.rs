@@ -1,7 +1,6 @@
 #![cfg(feature = "dbus")]
 
 use std::{
-    path::PathBuf,
     process::{Child, Command, Stdio},
     time::Duration,
 };
@@ -12,15 +11,6 @@ use zbus::{Connection, Proxy, connection::Builder};
 const BUS_NAME: &str = "com.github.SUPERCILEX.Ringboard";
 const OBJECT_PATH: &str = "/com/github/SUPERCILEX/Ringboard";
 const INTERFACE: &str = "com.github.SUPERCILEX.Ringboard1";
-
-fn binary_path() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.push("target");
-    p.push(if cfg!(debug_assertions) { "debug" } else { "release" });
-    p.push("ringboard-server");
-    p
-}
 
 struct Bus {
     addr: String,
@@ -48,13 +38,13 @@ fn start_bus_and_server() -> Option<Bus> {
     let pid = pid?;
 
     let tmpdir = tempfile::tempdir().ok()?;
-    let server = Command::new(binary_path())
+    let server = Command::new(env!("CARGO_BIN_EXE_ringboard-server"))
         .env("XDG_DATA_HOME", tmpdir.path())
         .env("DBUS_SESSION_BUS_ADDRESS", &addr)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .ok()?;
+        .expect("failed to spawn ringboard-server");
 
     Some(Bus { addr, pid, _server: server, _tmpdir: tmpdir })
 }
