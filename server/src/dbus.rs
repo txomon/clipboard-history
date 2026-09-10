@@ -7,8 +7,10 @@ use std::{
     os::fd::OwnedFd,
     sync::Arc,
     thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
 
+use futures_util::StreamExt;
 use log::{info, warn};
 use ringboard_core::dirs::{data_dir, socket_file};
 use ringboard_core::protocol::{AddResponse, RingKind};
@@ -20,7 +22,7 @@ use ringboard_sdk::{
 };
 use rustix::fs::{MemfdFlags, memfd_create};
 use rustix::net::SocketAddrUnix;
-use zbus::connection::Builder;
+use zbus::{Connection, MessageStream, connection::Builder};
 
 pub const BUS_NAME: &str = "com.github.SUPERCILEX.Ringboard";
 pub const OBJECT_PATH: &str = "/com/github/SUPERCILEX/Ringboard";
@@ -49,9 +51,7 @@ fn run() {
         .build()
         .expect("failed to build tokio runtime for ringboard-dbus");
 
-    if let Err(e) = rt.block_on(serve()) {
-        warn!("ringboard-dbus exiting: {e}");
-    }
+    rt.block_on(serve());
 }
 
 fn open_server() -> zbus::fdo::Result<OwnedFd> {
@@ -272,14 +272,77 @@ impl Iface {
     }
 }
 
-async fn serve() -> zbus::Result<()> {
-    let _conn = Builder::session()?
+async fn connect() -> zbus::Result<Connection> {
+    Builder::session()?
         .name(BUS_NAME)?
         .serve_at(OBJECT_PATH, Iface)?
         .build()
-        .await?;
-    info!("DBus interface registered on session bus as {BUS_NAME}");
-    // Park forever; zbus dispatches in the background.
-    std::future::pending::<()>().await;
-    Ok(())
+        .await
+}
+
+/// Own `BUS_NAME` for as long as the process lives, re-registering whenever
+/// the session bus goes away. Never returns.
+///
+/// The bus can restart underneath us without taking us with it: under systemd
+/// `dbus.socket` owns the listening socket and only the daemon behind it is
+/// replaced. Our connection dies, and with it the name reservation, which
+/// lived in the old daemon's memory rather than in our socket. So recovery
+/// means a fresh connection and a fresh `RequestName`, not just a reconnect.
+async fn serve() -> ! {
+    const BACKOFF_MIN: Duration = Duration::from_secs(1);
+    const BACKOFF_MAX: Duration = Duration::from_secs(30);
+    // A connection that lasted this long counts as healthy, so the next
+    // failure starts backing off from scratch. Without this, a bus that
+    // accepts us and immediately drops us would spin this loop.
+    const STABLE_AFTER: Duration = Duration::from_secs(10);
+
+    let mut backoff = BACKOFF_MIN;
+    loop {
+        match connect().await {
+            Ok(conn) => {
+                info!("DBus interface registered on session bus as {BUS_NAME}");
+                let connected_at = Instant::now();
+
+                // zbus reports a dead connection by yielding an error on the
+                // message stream and then ending it. Its reader task stops on
+                // any error, so every error here is terminal. Draining the
+                // stream also satisfies its requirement to be polled
+                // continuously, and does not intercept method calls: the
+                // object server dispatches those independently.
+                let mut stream = MessageStream::from(&conn);
+                let mut failure = None;
+                while let Some(msg) = stream.next().await {
+                    if let Err(e) = msg {
+                        failure = Some(e);
+                        break;
+                    }
+                }
+                drop(stream);
+                // Deliberately a plain drop rather than `graceful_shutdown`:
+                // that waits for every other reference to the connection to go
+                // away, including in-flight interface calls, which on an
+                // already-dead connection could block this loop forever.
+                drop(conn);
+
+                match failure {
+                    Some(e) => warn!(
+                        "Session bus connection failed ({e}); re-registering {BUS_NAME}."
+                    ),
+                    None => warn!(
+                        "Session bus closed the connection; re-registering {BUS_NAME}."
+                    ),
+                }
+
+                if connected_at.elapsed() >= STABLE_AFTER {
+                    backoff = BACKOFF_MIN;
+                }
+            }
+            Err(e) => warn!(
+                "Cannot register {BUS_NAME} on the session bus ({e}); retrying in {backoff:?}."
+            ),
+        }
+
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(BACKOFF_MAX);
+    }
 }
