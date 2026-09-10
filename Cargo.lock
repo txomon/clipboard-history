@@ -856,6 +856,7 @@ dependencies = [
  "clipboard-history-core",
  "env_logger",
  "error-stack",
+ "futures-util",
  "io-uring",
  "libc",
  "log",
