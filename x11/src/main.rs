@@ -172,7 +172,7 @@ enum State {
 }
 
 const MAX_CONCURRENT_TRANSFERS: usize = 4;
-const BASE_TRANSFER_ATOM: AtomEnum = AtomEnum::CUT_BUFFE_R0;
+const BASE_TRANSFER_ATOM: AtomEnum = AtomEnum::CUT_BUFFER0;
 
 const MAX_TRANSFER_SIZE: usize = 1 << 20;
 

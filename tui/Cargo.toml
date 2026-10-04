@@ -10,15 +10,15 @@ categories = ["command-line-utilities", "development-tools", "filesystem"]
 license.workspace = true
 
 [dependencies]
-error-stack = { version = "0.7.1", default-features = false, features = ["std"] }
+error-stack = { version = "0.8.0", default-features = false, features = ["std"] }
 image = "0.25.10"
 ratatui = { version = "0.30.2", features = ["unstable-rendered-line-info"] }
-ratatui-image = { version = "11.0.5", default-features = false, features = ["image-defaults", "crossterm"] }
+ratatui-image = { version = "11.1.0", default-features = false, features = ["image-defaults", "crossterm"] }
 ringboard-sdk = { package = "clipboard-history-client-sdk", version = "0", path = "../client-sdk", features = ["error-stack", "ui"] }
-rustix = { version = "1.1.4", features = ["stdio"] }
-thiserror = "2.0.18"
-tracy-client = { version = "0.18.4", optional = true }
-tui-input = "0.15.3"
+rustix = { version = "1.1.5", features = ["stdio"] }
+thiserror = "2.0.21"
+tracy-client = { version = "0.19.0", optional = true }
+tui-input = "0.15.5"
 
 [features]
 trace = ["dep:tracy-client"]

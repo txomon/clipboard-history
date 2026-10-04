@@ -247,7 +247,7 @@ impl FreeLists {
         )
         .map_io_err(|| "Failed to open free lists file.")?;
         let bytes = bitcode::encode(&self.lists);
-        debug_assert!(!bytes.is_empty());
+        debug_assert_ne!(bytes, [] as [u8; 0]);
         File::from(file)
             .write_all_at(&bytes, 0)
             .map_io_err(|| "Failed to write free lists.")?;
@@ -505,8 +505,9 @@ impl Allocator {
             writer.write(Entry::Uninitialized, head)?;
             self.data.free(entry, to, head)?;
 
-            // Only GC on allocation instead of in AllocatorData::free to avoid spamming GCs
-            // when removing many entries. This is common in deduplication for example.
+            // Only GC on allocation instead of in AllocatorData::free to avoid
+            // spamming GCs when removing many entries. This is common in
+            // deduplication for example.
             if let Entry::Bucketed(_) = entry {
                 self.gc_(u16::MAX.into())?;
             }

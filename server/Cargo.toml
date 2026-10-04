@@ -10,21 +10,21 @@ categories = ["command-line-utilities", "development-tools", "filesystem"]
 license = "AGPL-3.0-only"
 
 [dependencies]
-arrayvec = "0.7.7"
+arrayvec = "0.7.8"
 bitcode = { version = "0.6.9", features = ["arrayvec"] }
 bitvec = "1.1.1"
-env_logger = { version = "0.11.10", default-features = false }
-error-stack = { version = "0.7.1", default-features = false, features = ["std"] }
-io-uring = "0.7.12"
-libc = "0.2.186"
-log = { version = "0.4.33", features = ["release_max_level_info"] }
+env_logger = { version = "0.11.11", default-features = false }
+error-stack = { version = "0.8.0", default-features = false, features = ["std"] }
+io-uring = "0.7.15"
+libc = "0.2.190"
+log = { version = "0.4.34", features = ["release_max_level_info"] }
 ringboard-core = { package = "clipboard-history-core", version = "0", path = "../core", features = ["error-stack"] }
 ringboard-sdk = { package = "clipboard-history-client-sdk", version = "0", path = "../client-sdk" }
-rustix = { version = "1.1.4", features = ["fs", "process", "net", "io_uring"] }
+rustix = { version = "1.1.5", features = ["fs", "process", "net", "io_uring"] }
 sd-notify = { version = "0.5.0", optional = true }
-smallvec = "2.0.0-alpha.12"
-thiserror = "2.0.18"
-tracy-client = { version = "0.18.4", optional = true }
+smallvec = "2.0.0-beta.2"
+thiserror = "2.0.21"
+tracy-client = { version = "0.19.0", optional = true }
 
 [features]
 default = ["systemd", "human-logs"]

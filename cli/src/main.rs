@@ -1,4 +1,5 @@
 #![feature(core_io_borrowed_buf)]
+#![allow(clippy::empty_enums)]
 
 use std::{
     borrow::Cow,
@@ -672,6 +673,7 @@ fn search(
                           mime_type: MimeType,
                           highlight: Option<(usize, usize)>|
      -> Result<(), CliError> {
+        #[allow(clippy::branches_sharing_code)]
         match &mut output {
             Output::Text(output) => {
                 writeln!(
@@ -1432,10 +1434,10 @@ fn migrate_from_gpaste(server: OwnedFd, database: Option<PathBuf>) -> Result<(),
                         .map_io_err(|| "GPaste history file appears to be corrupted.")?;
                 }
                 Event::Start(e) => {
-                    return match e.name().as_ref() {
-                        b"history" => {
+                    return match e.name().into_inner() {
+                        "history" => {
                             if e.try_get_attribute("version")?
-                                .is_some_and(|s| s.value.as_ref() == b"2.0")
+                                .is_some_and(|s| s.value.as_ref() == "2.0")
                             {
                                 break;
                             }

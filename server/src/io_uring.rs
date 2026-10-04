@@ -112,8 +112,8 @@ pub mod types {
                     .read_unaligned()
             };
 
-            // min is used because the header may indicate the true size of the data
-            // while what we received was truncated.
+            // min is used because the header may indicate the true size of the
+            // data while what we received was truncated.
             let (_name_data, control_start) = {
                 let name_start = Self::DATA_START;
                 let name_data_len =

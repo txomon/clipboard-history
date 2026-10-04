@@ -25,7 +25,7 @@ use eframe::{
         CentralPanel, Event, FontId, Frame, Image, Key, Label, Margin, Modifiers, Panel, Popup,
         PopupCloseBehavior, Pos2, Response, RichText, ScrollArea, Sense, Stroke, TextEdit,
         TextFormat, ThemePreference, Ui, Vec2, ViewportBuilder, ViewportCommand, Widget,
-        text::{LayoutJob, LayoutSection},
+        text::{ByteIndex, LayoutJob, LayoutSection},
     },
 };
 use image::ImageReader;
@@ -256,7 +256,8 @@ impl App {
             state,
             daemon: cfg!(not(feature = "wayland"))
                 && {
-                    // i3 thinks the closed window is focused if it moves monitors.
+                    // i3 thinks the closed window is focused if it moves
+                    // monitors.
                     option_env!("XDG_CURRENT_DESKTOP")
                         .is_none_or(|de| !de.eq_ignore_ascii_case("i3"))
                 }
@@ -381,7 +382,7 @@ impl eframe::App for App {
 
         Panel::top("search_bar")
             .frame(Frame::side_top_panel(ui.style()).inner_margin(0.))
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 search_ui(
                     ui,
                     &mut self.state,
@@ -395,7 +396,7 @@ impl eframe::App for App {
                 top: 5,
                 ..Margin::ZERO
             }))
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 main_ui(
                     ui,
                     &mut self.state,
@@ -735,12 +736,12 @@ fn entry_ui(
                         vec![
                             LayoutSection {
                                 leading_space: 0.0,
-                                byte_range: 0..start,
+                                byte_range: ByteIndex(0)..ByteIndex(start),
                                 format: format.clone(),
                             },
                             LayoutSection {
                                 leading_space: 0.0,
-                                byte_range: start..end,
+                                byte_range: ByteIndex(start)..ByteIndex(end),
                                 format: TextFormat {
                                     underline: Stroke::new(1f32, ui.visuals().strong_text_color()),
                                     ..format.clone()
@@ -748,14 +749,14 @@ fn entry_ui(
                             },
                             LayoutSection {
                                 leading_space: 0.0,
-                                byte_range: end..one_liner.len(),
+                                byte_range: ByteIndex(end)..ByteIndex(one_liner.len()),
                                 format,
                             },
                         ]
                     } else {
                         vec![LayoutSection {
                             leading_space: 0.0,
-                            byte_range: 0..one_liner.len(),
+                            byte_range: ByteIndex(0)..ByteIndex(one_liner.len()),
                             format,
                         }]
                     }
@@ -1193,8 +1194,8 @@ mod system_fonts {
                 .font_data
                 .insert((*region).to_string(), Arc::new(FontData::from_owned(bytes)));
 
-            // Putting proportional fonts into the monospace bucket is a little dumb, but
-            // it's better than tofus so eh.
+            // Putting proportional fonts into the monospace bucket is a little
+            // dumb, but it's better than tofus so eh.
             fonts
                 .families
                 .entry(FontFamily::Monospace)

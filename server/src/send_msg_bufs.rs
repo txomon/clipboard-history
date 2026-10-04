@@ -57,11 +57,7 @@ impl SendMsgBufs {
         control: Control,
         data: Data,
     ) -> PendingBufAllocation {
-        let mut buf = self
-            .pool
-            .pop()
-            .map(LengthlessVec::into_vec)
-            .unwrap_or_default();
+        let mut buf = self.pool.pop().map_or_default(LengthlessVec::into_vec);
 
         control(&mut buf);
         let control_len = buf.len();
