@@ -9,7 +9,7 @@ use std::{
 
 use arrayvec::ArrayVec;
 use io_uring::{
-    IoUring, SubmissionQueue,
+    EnterFlags, IoUring, SubmissionQueue,
     cqueue::{Entry, buffer_select, more},
     opcode::{AcceptMulti, Close, PollAdd, RecvMsgMulti, SendMsg},
     squeue::{Flags, PushError},
@@ -231,6 +231,10 @@ pub fn run(allocator: &mut Allocator) -> Result<(), CliError> {
     let (mut uring, BuiltInFds([accept_fd, signal_handler_fd, low_mem_listener_fd])) =
         setup_uring()?;
 
+    // The server parks on the ring between clipboard events, so without this the kernel accounts
+    // the whole idle time as iowait and /proc/pressure/io reads near 100%.
+    let no_iowait = uring.params().is_feature_no_iowait();
+
     #[cfg(feature = "systemd")]
     sd_notify::notify(&[sd_notify::NotifyState::Ready])
         .map_io_err(|| "Failed to notify systemd of startup completion.")?;
@@ -336,7 +340,21 @@ pub fn run(allocator: &mut Allocator) -> Result<(), CliError> {
         {
             let want = uring.submission().is_empty().into();
             trace!("Waiting for at least {want} events.");
-            match uring.submit_and_wait(want) {
+            let result = if want > 0 && no_iowait {
+                let to_submit = uring.submission().len();
+                let flags = EnterFlags::GETEVENTS | EnterFlags::NO_IOWAIT;
+                unsafe {
+                    uring.submitter().enter::<libc::sigset_t>(
+                        to_submit as u32,
+                        want as u32,
+                        flags.bits(),
+                        None,
+                    )
+                }
+            } else {
+                uring.submit_and_wait(want)
+            };
+            match result {
                 Err(e) if e.kind() == ErrorKind::Interrupted => continue,
                 r => r,
             }
