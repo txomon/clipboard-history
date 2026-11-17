@@ -88,32 +88,23 @@ export class DbusClient {
     });
   }
 
-  // True if the ringboard bus name has an owner. Used at startup to decide
-  // between the populated menu and the "server unavailable" placeholder.
-  async probe() {
-    try {
-      const reply = await new Promise((resolve, reject) => {
-        this._conn.call(
-          'org.freedesktop.DBus',
-          '/org/freedesktop/DBus',
-          'org.freedesktop.DBus',
-          'NameHasOwner',
-          new GLib.Variant('(s)', [BUS_NAME]),
-          new GLib.VariantType('(b)'),
-          Gio.DBusCallFlags.NONE,
-          -1,
-          null,
-          (conn, res) => {
-            try { resolve(conn.call_finish(res)); }
-            catch (e) { reject(e); }
-          },
-        );
-      });
-      const [owned] = reply.deep_unpack();
-      return Boolean(owned);
-    } catch (_) {
-      return false;
-    }
+  // Track whether the ringboard bus name has an owner for as long as the
+  // watch lives. `onChange(present)` fires once with the initial state and
+  // again on every appear/vanish, so a server that starts after the shell
+  // (login race) or restarts later is picked up. Returns a watch id for
+  // unwatch().
+  watch(onChange) {
+    return Gio.bus_watch_name_on_connection(
+      this._conn,
+      BUS_NAME,
+      Gio.BusNameWatcherFlags.NONE,
+      () => onChange(true),
+      () => onChange(false),
+    );
+  }
+
+  unwatch(id) {
+    Gio.bus_unwatch_name(id);
   }
 
   // Submit an entry. Returns the numeric id assigned by the server, or

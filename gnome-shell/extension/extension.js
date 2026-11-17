@@ -21,39 +21,39 @@ const SETTING_KEY_TOGGLE_MENU = 'toggle-menu';
 // Panel button. Owns its own menu and wires the three lib components.
 const ClipboardIndicator = GObject.registerClass(
 class ClipboardIndicator extends PanelMenu.Button {
-  _init(extension, client, settings, connected) {
+  // `client` is null when the session bus could not be opened; the
+  // indicator then only ever shows the unavailable placeholder.
+  _init(extension, client, settings) {
     super._init(0, 'Ringboard Clipboard History', false);
 
     this._extension = extension;
     this._client = client;
     this._settings = settings;
-    this._connected = connected;
+    this._connected = false;
     this._intake = null;
     this._controller = null;
     this._shortcutBound = false;
 
     const hbox = new St.BoxLayout({ style_class: 'panel-status-menu-box' });
     this._icon = new St.Icon({
-      icon_name: connected ? INDICATOR_ICON : DISCONNECTED_ICON,
+      icon_name: DISCONNECTED_ICON,
       style_class: 'system-status-icon',
     });
     hbox.add_child(this._icon);
     hbox.add_child(PopupMenu.arrowIcon(St.Side.BOTTOM));
     this.add_child(hbox);
 
-    if (!connected) {
-      this._buildDisconnectedMenu();
-      return;
-    }
+    this._buildDisconnectedMenu();
+    if (!client) return;
 
     this._intake = new ClipboardIntake(client, settings);
     this._intake.setOnAddResult(ok => this._setConnected(ok));
-    this._intake.enable();
 
     this._buildMenu();
     this._controller = new MenuController(client, settings, this._intake, this._historySection);
     this._wireMenuLifecycle();
     this._wireSettings();
+    this._setServerPresent(false);
   }
 
   // Flip the panel icon between the regular paste glyph and a
@@ -64,10 +64,31 @@ class ClipboardIndicator extends PanelMenu.Button {
     this._icon.set_icon_name(ok ? INDICATOR_ICON : DISCONNECTED_ICON);
   }
 
+  // Driven by the bus name watch. Swaps the menu between the history UI and
+  // the unavailable placeholder, and runs intake only while a server owns
+  // the name.
+  setServerPresent(present) {
+    console.log(`ringboard: server ${present ? 'appeared' : 'vanished'} on the session bus`);
+    this._setServerPresent(present);
+    if (present && this.menu.isOpen) {
+      this._controller.onMenuOpen().catch(e => {
+        console.warn(`ringboard: onMenuOpen failed: ${e.message}`);
+      });
+    }
+  }
+
+  _setServerPresent(present) {
+    this._unavailableItem.actor.visible = !present;
+    for (const item of this._serverItems) item.actor.visible = present;
+    if (present) this._intake.enable();
+    else this._intake.disable();
+    this._setConnected(present);
+  }
+
   _buildDisconnectedMenu() {
-    const item = new PopupMenu.PopupMenuItem('Ringboard server unavailable');
-    item.setSensitive(false);
-    this.menu.addMenuItem(item);
+    this._unavailableItem = new PopupMenu.PopupMenuItem('Ringboard server unavailable');
+    this._unavailableItem.setSensitive(false);
+    this.menu.addMenuItem(this._unavailableItem);
   }
 
   _buildMenu() {
@@ -87,6 +108,7 @@ class ClipboardIndicator extends PanelMenu.Button {
     });
     searchItem.add_child(this._searchEntry);
     this.menu.addMenuItem(searchItem);
+    this._serverItems = [searchItem];
 
     // History section inside a scroll view. The CSS class
     // `ci-history-menu-section` carries the max-height: 450px clamp.
@@ -99,8 +121,11 @@ class ClipboardIndicator extends PanelMenu.Button {
     const scrollWrap = new PopupMenu.PopupMenuSection();
     scrollWrap.actor.add_child(this._scrollView);
     this.menu.addMenuItem(scrollWrap);
+    this._serverItems.push(scrollWrap);
 
-    this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+    const separator = new PopupMenu.PopupSeparatorMenuItem();
+    this.menu.addMenuItem(separator);
+    this._serverItems.push(separator);
 
     // Action row: prev | next | (spacer) | clear. Embedding St.Buttons in a
     // non-reactive PopupBaseMenuItem prevents the menu from auto-closing on
@@ -116,6 +141,7 @@ class ClipboardIndicator extends PanelMenu.Button {
     });
     actionsItem.add_child(actionsBox);
     this.menu.addMenuItem(actionsItem);
+    this._serverItems.push(actionsItem);
 
     const makeIconButton = (iconName, onClick) => {
       const btn = new St.Button({
@@ -246,37 +272,31 @@ class ClipboardIndicator extends PanelMenu.Button {
 export default class RingboardExtension extends Extension {
   enable() {
     const settings = this.getSettings();
-    this._enableGen = (this._enableGen ?? 0) + 1;
-    const myGen = this._enableGen;
 
-    let client;
+    let client = null;
     try {
       client = new DbusClient();
     } catch (e) {
-      this._installIndicator(null, settings, false, myGen);
       console.warn(`ringboard: failed to open session bus: ${e.message}`);
-      return;
     }
-    client.probe().then(connected => {
-      this._installIndicator(client, settings, connected, myGen);
-    }).catch(() => {
-      this._installIndicator(client, settings, false, myGen);
-    });
-  }
-
-  _installIndicator(client, settings, connected, gen) {
-    // The extension may have been disabled (and possibly re-enabled) between
-    // the bus probe and this callback; only mount if we still own this
-    // enable generation.
-    if (gen !== this._enableGen) return;
-    if (this._indicator) return;
-    this._indicator = new ClipboardIndicator(this, client, settings, connected);
+    this._client = client;
+    this._indicator = new ClipboardIndicator(this, client, settings);
     Main.panel.addToStatusArea('ringboard-clipboard-history', this._indicator, 1, 'right');
+
+    // The server may start after the shell (it is ordered after
+    // graphical-session.target) or restart later, so follow the bus name for
+    // the whole session instead of probing once.
+    if (client) {
+      this._watchId = client.watch(present => this._indicator.setServerPresent(present));
+    }
   }
 
   disable() {
-    // Bump the generation so any pending probe callbacks become no-ops.
-    this._enableGen = (this._enableGen ?? 0) + 1;
+    if (this._watchId) {
+      this._client.unwatch(this._watchId);
+      this._watchId = 0;
+    }
+    this._client = null;
     if (this._indicator) {
       this._indicator.destroy();
       this._indicator = null;
